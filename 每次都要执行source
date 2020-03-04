@@ -1,0 +1,4 @@
+Mac 每次都要执行source ~/.bash_profile 配置的环境变量才生效
+https://blog.csdn.net/science_Lee/article/details/79214127
+在~/.zshrc文件最后，增加一行：
+source ~/.bash_profile
