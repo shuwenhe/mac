@@ -1,5 +1,5 @@
 #!/bin/bash
-# linux-vm-installer.sh — 在 macOS 上一键安装 Linux 虚拟机（修复Root权限问题）
+# linux-vm-installer.sh — 在 macOS 上一键安装 Linux 虚拟机（修复Homebrew问题）
 
 set -euo pipefail
 
@@ -105,7 +105,19 @@ install_dependencies() {
     
     # 安装QEMU和相关工具（普通用户权限）
     step "安装QEMU虚拟机工具..."
-    run_as_user brew install qemu virt-manager virt-viewer
+    run_as_user brew install qemu
+    
+    # 尝试安装virt-manager（如果可用）
+    if run_as_user brew search virt-manager | grep -q virt-manager; then
+        run_as_user brew install virt-manager
+    else
+        echo -e "${YELLOW}⚠️ 无法安装virt-manager，将使用命令行方式管理虚拟机${NC}"
+    fi
+    
+    # 检查图形界面访问工具
+    if ! command_exists open; then
+        echo -e "${YELLOW}⚠️ 未找到图形界面工具，将使用纯文本模式${NC}"
+    fi
     
     success "依赖安装完成"
 }
@@ -151,49 +163,89 @@ if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
     exit 1
 fi
 
+# 检查是否有图形界面支持
+HAS_GUI=1
+if ! command -v open >/dev/null 2>&1; then
+    HAS_GUI=0
+fi
+
 # 启动虚拟机（首次启动需要添加ISO镜像）
 if [ -f "$ISO_PATH" ] && ! grep -q "installed" "$VM_DIR/state"; then
     echo "首次启动，加载安装镜像..."
-    qemu-system-x86_64 \\
-      -name "$VM_NAME" \\
-      -machine q35,accel=hvf \\
-      -cpu host \\
-      -smp "$VM_CPUS" \\
-      -m "$VM_RAM" \\
-      -device virtio-vga,virgl=on \\
-      -display default,show-cursor=on \\
-      -device virtio-keyboard-pci \\
-      -device virtio-mouse-pci \\
-      -drive file="$DISK_PATH",format=qcow2,if=virtio \\
-      -drive file="$ISO_PATH",media=cdrom,if=virtio \\
-      -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
-      -device virtio-net-pci,netdev=net0 \\
-      -usb \\
-      -device usb-tablet \\
-      -vga qxl \\
-      "\$@"
+    
+    if [ "\$HAS_GUI" -eq 1 ]; then
+        # 带图形界面的启动方式
+        qemu-system-x86_64 \\
+          -name "$VM_NAME" \\
+          -machine q35,accel=hvf \\
+          -cpu host \\
+          -smp "$VM_CPUS" \\
+          -m "$VM_RAM" \\
+          -device virtio-vga,virgl=on \\
+          -display default,show-cursor=on \\
+          -device virtio-keyboard-pci \\
+          -device virtio-mouse-pci \\
+          -drive file="$DISK_PATH",format=qcow2,if=virtio \\
+          -drive file="$ISO_PATH",media=cdrom,if=virtio \\
+          -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
+          -device virtio-net-pci,netdev=net0 \\
+          -usb \\
+          -device usb-tablet \\
+          -vga qxl \\
+          "\$@"
+    else
+        # 纯文本模式启动
+        qemu-system-x86_64 \\
+          -name "$VM_NAME" \\
+          -machine q35,accel=hvf \\
+          -cpu host \\
+          -smp "$VM_CPUS" \\
+          -m "$VM_RAM" \\
+          -nographic \\
+          -drive file="$DISK_PATH",format=qcow2,if=virtio \\
+          -drive file="$ISO_PATH",media=cdrom,if=virtio \\
+          -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
+          -device virtio-net-pci,netdev=net0 \\
+          "\$@"
+    fi
     
     # 标记为已安装（用户完成安装后）
     echo "installed" > "$VM_DIR/state"
 else
     # 正常启动（无ISO镜像）
-    qemu-system-x86_64 \\
-      -name "$VM_NAME" \\
-      -machine q35,accel=hvf \\
-      -cpu host \\
-      -smp "$VM_CPUS" \\
-      -m "$VM_RAM" \\
-      -device virtio-vga,virgl=on \\
-      -display default,show-cursor=on \\
-      -device virtio-keyboard-pci \\
-      -device virtio-mouse-pci \\
-      -drive file="$DISK_PATH",format=qcow2,if=virtio \\
-      -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
-      -device virtio-net-pci,netdev=net0 \\
-      -usb \\
-      -device usb-tablet \\
-      -vga qxl \\
-      "\$@"
+    if [ "\$HAS_GUI" -eq 1 ]; then
+        # 带图形界面的启动方式
+        qemu-system-x86_64 \\
+          -name "$VM_NAME" \\
+          -machine q35,accel=hvf \\
+          -cpu host \\
+          -smp "$VM_CPUS" \\
+          -m "$VM_RAM" \\
+          -device virtio-vga,virgl=on \\
+          -display default,show-cursor=on \\
+          -device virtio-keyboard-pci \\
+          -device virtio-mouse-pci \\
+          -drive file="$DISK_PATH",format=qcow2,if=virtio \\
+          -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
+          -device virtio-net-pci,netdev=net0 \\
+          -usb \\
+          -device usb-tablet \\
+          -vga qxl \\
+          "\$@"
+    else
+        # 纯文本模式启动
+        qemu-system-x86_64 \\
+          -name "$VM_NAME" \\
+          -machine q35,accel=hvf \\
+          -cpu host \\
+          -smp "$VM_CPUS" \\
+          -m "$VM_RAM" \\
+          -nographic \\
+          -drive file="$DISK_PATH",format=qcow2,if=virtio \\
+          -netdev user,id=net0,hostfwd=tcp::2222-:22 \\
+          -device virtio-net-pci,netdev=net0 \\
+          "\$@"
+    fi
 fi
 EOF
     
@@ -223,10 +275,15 @@ main() {
     echo "     sudo ${VM_DIR}/start-vm.sh"
     echo "  2. 首次启动将自动加载ISO镜像，进入Ubuntu安装界面"
     echo "  3. 按照向导完成Ubuntu安装（安装时建议勾选SSH服务）"
-    echo "  4. 安装完成后重启虚拟机（可能需要手动移除ISO镜像选项）"
+    echo "  4. 安装完成后重启虚拟机"
     echo
     echo -e "${GREEN}提示: 虚拟机的SSH端口已映射到主机的2222端口${NC}"
     echo -e "${GREEN}     安装完成后可以使用: ssh -p 2222 用户名@localhost${NC}"
+    echo
+    echo -e "${YELLOW}图形界面访问说明:${NC}"
+    echo "  - 如果虚拟机没有显示图形界面，可以尝试使用VNC客户端连接"
+    echo "  - 推荐使用TigerVNC或Chicken of the VNC等工具"
+    echo "  - VNC连接地址: localhost:5900"
 }
 
 main "$@"
